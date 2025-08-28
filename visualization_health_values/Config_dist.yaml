@@ -1,0 +1,11 @@
+Graphs:
+  HyperT4:
+    T4:
+      file: "/path/to/file/T4"
+      color: "purple"
+    Thiamazole:
+      file: "/path/to/file/Thiamazole"
+      horizontal: true
+      color: "fuchsia"
+    Poids:
+      file: "/path/to/file/Poids"

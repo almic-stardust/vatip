@@ -7,6 +7,8 @@ import datetime
 import matplotlib.pyplot as plt
 import itertools
 import matplotlib
+from collections import defaultdict
+
 
 def Load_file(Filename):
 	"""Load date and value pairs from file."""
@@ -37,6 +39,7 @@ def Load_file(Filename):
 		sys.exit(1)
 	return Dates, Values
 
+
 def Plot_graph(Graph_name, Period):
 	"""Create the graph, with a hidden Y-axis for each marker’s scale"""
 	with open("Config.yaml", "r") as File:
@@ -46,6 +49,8 @@ def Plot_graph(Graph_name, Period):
 		print(f"Unknown graph '{Graph_name}'.\n Available graphs: {', '.join(Graphs.keys())}")
 		sys.exit(1)
 	Markers = []
+	Anterior_value = None
+	Earliest_connected_marker = None
 	All_dates = []
 	All_colors = []
 	Color_cycle = itertools.cycle(matplotlib.rcParams["axes.prop_cycle"].by_key()["color"])
@@ -53,33 +58,54 @@ def Plot_graph(Graph_name, Period):
 	Legend_handles = []
 	Legend_labels = []
 
-	# Load markers
+	# First loop to load the markers:
+	# 1) We need all the colors before starting drawing, so as not to use the same twice
+	# 2) When a range of dates is selected, for horizontal markers we need the last value before the
+	# beginning of the range
 	for Marker_name, Marker_dict in Graphs[Graph_name].items():
 		Dates, Values = Load_file(Marker_dict["file"])
 		if not Dates:
 			print(f"Error: No data to plot for file {Marker_dict['file']}.")
 			sys.exit(1)
-		if Period:
-			Start_date, End_date = Period
-			Filtered = [(Date, Value) for Date, Value in zip(Dates, Values) if Start_date <= Date <= End_date]
-			if not Filtered:
-				continue
-			Dates, Values = zip(*Filtered)
-		if not Dates:
-			continue
 		# Check if this marker’s plot is connected or horizontal
 		Connected = True
 		if Marker_dict.get("horizontal", False):
 			Connected = False
 		Color = Marker_dict.get("color", "")
+
+		# If a range of dates is selected
+		if Period:
+			Start_date, End_date = Period
+			# If it’s a horizontal marker, find the last value before Start_date (if any)
+			if not Connected:
+				for Date, Value in zip(Dates, Values):
+					if Date < Start_date:
+						Anterior_value = Value
+					# When we pass Start_date
+					else:
+						break
+			Filtered = []
+			for Date, Value in zip(Dates, Values):
+				if Start_date <= Date <= End_date:
+					Filtered.append((Date, Value))
+			if not Filtered:
+				continue
+			Dates, Values = zip(*Filtered)
+			if not Dates:
+				continue
+			# Find the earliest date among the connected markers
+			if Connected:
+				if Earliest_connected_marker is None or Dates[0] < Earliest_connected_marker:
+					Earliest_connected_marker = Dates[0]
 		Max_value = max(Values)
 		# Add 0.3% to the highest value, to prevent its point from being cut off in the graph
 		Scale = 0, Max_value + (Max_value * .0334)
 		# For readability, there’s an offset between the labels and their points. This offset must
 		# be consistent from one marker to another. So the label offset of a marker is based on its
 		# scale (= its highest value).
-		Label_offset = Max_value * .016
-		Markers.append((Marker_name, Connected, Color, Scale, Label_offset, Dates, Values))
+		Offset = Max_value * .016
+
+		Markers.append((Marker_name, Connected, Color, Scale, Offset, Dates, Values, Anterior_value))
 		All_dates.extend(Dates)
 		All_colors.extend(Color)
 
@@ -89,9 +115,9 @@ def Plot_graph(Graph_name, Period):
 	# Remove duplicates and sort
 	All_dates = sorted(set(All_dates))
 
-	# Map each unique scale to a dedicated axis
+	# Second loop to draw the plots for each marker
 	Fig, Main_axis = plt.subplots(figsize=(10, 6))
-	for Marker_name, Connected, Color, Scale, Label_offset, Dates, Values in Markers:
+	for Marker_name, Connected, Color, Scale, Offset, Dates, Values, Anterior_value in Markers:
 		# Get or create axis for this scale
 		if Scale not in Scale_to_axis:
 			if not Scale_to_axis:
@@ -108,11 +134,16 @@ def Plot_graph(Graph_name, Period):
 			while Color in All_colors:
 				Color = next(Color_cycle)
 
-		# Plot the series on its axis
+		# Draw the plot for this marker
 		if Connected:
 			Line, = Axis.plot(Dates, Values, marker="o", linestyle="-", label=Marker_name, color=Color)
+		# This is a horizontal marker, drawn with segments
 		else:
-			# This marker is draw with horizontal segments
+			# If a horizontal marker have a last value before the beginning of the range of dates,
+			# add it at a new value for the date Earliest_connected_marker
+			if Period and Anterior_value:
+				Dates = [Earliest_connected_marker] + list(Dates)
+				Values = [Anterior_value] + list(Values)
 			for Counter in range(len(Dates) - 1):
 				if Values[Counter] > 0:
 					Axis.hlines(
@@ -139,16 +170,16 @@ def Plot_graph(Graph_name, Period):
 					if Counter < len(Values) - 1 and Values[Counter + 1] < Value:
 						# Downward slope ahead = label above
 						Vertical_alignment = "bottom"
-						Offset = Label_offset
+						Label_offset = Offset
 					else:
 						# Upward or stable = label below
 						Vertical_alignment = "top"
-						Offset = -Label_offset
+						Label_offset = -Offset
 				else:
-					# Horizontal segments = label below
+					# Horizontal marker = label below
 					Vertical_alignment = "top"
-					Offset = -Label_offset
-				Axis.text(Date, Value + Offset, str(Value), ha="center", va=Vertical_alignment, fontsize=9, color=Color)
+					Label_offset = -Offset
+				Axis.text(Date, Value + Label_offset, str(Value), ha="center", va=Vertical_alignment, fontsize=9, color=Color)
 
 	# Hide Y-axes on both sides
 	for Axis in Scale_to_axis.values():
@@ -168,15 +199,26 @@ def Plot_graph(Graph_name, Period):
 
 	# Build X-axis labels with conditional year display
 	Labels = []
+	Tick_dates = []
 	Previous_year = None
+	# Group dates by ISO week
+	Weeks = defaultdict(list)
 	for Date in All_dates:
+		Year_week = Date.isocalendar()[:2]  # (year, week number)
+		Weeks[Year_week].append(Date)
+	# Display the Monday of each week 
+	for Year_week, _ in sorted(Weeks.items()):
+		Year, Week = Year_week
+		Monday = datetime.datetime.strptime(f"{Year}-W{Week}-1", "%Y-W%W-%w")
+		Tick_dates.append(Monday)
+		#Labels.append(Monday.strftime("%Y-%m-%d"))
 		if Date.year != Previous_year:
-			Labels.append(Date.strftime("%Y-%m-%d"))
+			Labels.append(Monday.strftime("%Y-%m-%d"))
 			Previous_year = Date.year
 		else:
-			Labels.append(Date.strftime("%m-%d"))
+			Labels.append(Monday.strftime("%m-%d"))
 	# Apply custom x-tick labels, rotated vertically
-	Main_axis.set_xticks(All_dates)
+	Main_axis.set_xticks(Tick_dates)
 	Main_axis.set_xticklabels(Labels, rotation=90)
 
 	# Display the graph
@@ -187,26 +229,43 @@ def Plot_graph(Graph_name, Period):
 			bbox_to_anchor=(-0.05, 1))
 	plt.show()
 
+
 if __name__ == "__main__":
 
 	if len(sys.argv) < 2:
-		print(f"Usage: {sys.argv[0]} <Graph> [YYYYMM-YYYYMM]")
+		print(f"Usage: {sys.argv[0]} <Graph> [YYYYMM- | YYYYYMM-YYYYMM]")
 		sys.exit(1)
 	Graph = sys.argv[1]
 
+	# 202503- = from March 2025 until last available date
+	# 202410-202509 = October 2024 through September 2025
+	# -202503 = from first available date until March 2025
 	if len(sys.argv) >= 3:
 		try:
-			Start_str, End_str = sys.argv[2].split("-")
-			Start_date = datetime.datetime.strptime(Start_str, "%Y%m")
-			# End of month handling: go to first of next month, subtract a day
-			End_year, End_month = int(End_str[:4]), int(End_str[4:])
-			if End_month == 12:
-				End_date = datetime.datetime(End_year + 1, 1, 1) - datetime.timedelta(days=1)
+			Period_string = sys.argv[2]
+			if "-" not in Period_string:
+				raise ValueError
+			Start_string, End_string = Period_string.split("-")
+			# Get start date for YYYYMM-YYYYMM and YYYYMM-
+			if Start_string:
+				Start_date = datetime.datetime.strptime(Start_string, "%Y%m")
+			# Case -YYYYMM = from first available date
 			else:
-				End_date = datetime.datetime(End_year, End_month + 1, 1) - datetime.timedelta(days=1)
+				Start_date = datetime.datetime.min
+			# Get end date for YYYYMM-YYYYMM and -YYYYMM
+			if End_string:
+				# End of month handling: go to first of next month, subtract a day
+				End_year, End_month = int(End_string[:4]), int(End_string[4:])
+				if End_month == 12:
+					End_date = datetime.datetime(End_year + 1, 1, 1) - datetime.timedelta(days=1)
+				else:
+					End_date = datetime.datetime(End_year, End_month + 1, 1) - datetime.timedelta(days=1)
+			# Case YYYYMM- = until last available date
+			else:
+				End_date = datetime.datetime.max
 			Period = Start_date, End_date
 		except Exception:
-			print(f"Invalid period format: {sys.argv[2]}. Use YYYYMM-YYYYMM.")
+			print(f"Invalid period format: “{sys.argv[2]}”. Use YYYYMM-YYYYMM, YYYYMM-, or -YYYYMM")
 			sys.exit(1)
 	else:
 		Period = None

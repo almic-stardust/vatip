@@ -7,9 +7,10 @@ import datetime
 import matplotlib.pyplot as plt
 import itertools
 import matplotlib
+from collections import Counter
 
 
-def Load_file(Filename):
+def Load_file(Filename, Event):
 	"""Load date and value pairs from file."""
 	Dates = []
 	Values = []
@@ -21,18 +22,38 @@ def Load_file(Filename):
 				if not Line or Line.startswith("#"):
 					continue
 				Parts = Line.split()
-				if len(Parts) < 2:
-					continue
 				try:
 					# First part is the date in DD/MM/YYYY
 					Date = datetime.datetime.strptime(Parts[0], "%d/%m/%Y")
-					# Second part is the numeric value
-					Value = float(Parts[1])
+					Dates.append(Date)
+					# The file is a list of pairs date+value
+					if not Event:
+						# Second part is the numeric value
+						Value = float(Parts[1])
+						Values.append(Value)
 				# Ignore bad lines
 				except ValueError:
+					print(f"Error Value")
 					continue
-				Dates.append(Date)
-				Values.append(Value)
+			# For a event marker, the list Values corresponds to the number of times the event
+			# occurred during a day (= the number of times that date appears in the file)
+			if Event:
+				# Count occurrences of each date
+				Counts = Counter(Dates)
+				Dates = []
+				# Remove duplicate dates, and add their count in the list Values
+				for Date, Count in Counts.items():
+					Dates.append(Date)
+					Values.append(Count)
+				# If instead we want to add the dates that doesn’t appear in the file with 0 in the
+				# list Values
+				#Start_date = Dates[0]
+				#End_date = Dates[-1]
+				#Dates = []
+				#for Date in [Start_date + datetime.timedelta(days=Date) for Date in range((End_date - Start_date).days + 1)]:
+				#	Dates.append(Date)
+				#	# If a date doesn’t appear in Counts (no event that day) = the value is 0
+				#	Values.append(Counts.get(Date, 0))
 	except FileNotFoundError:
 		print(f"Error: File {Filename} not found.")
 		sys.exit(1)
@@ -58,29 +79,26 @@ def Plot_graph(Graph_name, Period):
 	Legend_labels = []
 
 	# First loop to load the markers:
-	# 1) We need all the colors before starting drawing, so as not to use the same twice
-	# 2) When a range of dates is selected, for horizontal markers we need the last value before the
-	# beginning of the range
+	# 1) When a range of dates is selected, for horizontal markers we need the last value before the
+	#    beginning of the range, and the earliest date among connected markers
+	# 2) We need all the colors before starting drawing, so as not to use the same twice
 	for Marker_name, Marker_dict in Graphs[Graph_name].items():
-		Dates, Values = Load_file(Marker_dict["file"])
+		Horizontal = Marker_dict.get("horizontal", False)
+		Event = Marker_dict.get("event", False)
+		Color = Marker_dict.get("color", "")
+		Dates, Values = Load_file(Marker_dict["file"], Event)
 		if not Dates:
 			print(f"Error: No data to plot for file {Marker_dict['file']}.")
 			sys.exit(1)
-		# Check if this marker’s plot is connected or horizontal
-		Connected = True
-		if Marker_dict.get("horizontal", False):
-			Connected = False
-		Color = Marker_dict.get("color", "")
-
 		# If a range of dates is selected
 		if Period:
 			Start_date, End_date = Period
 			# If it’s a horizontal marker, find the last value before Start_date (if any)
-			if not Connected:
+			if Horizontal:
 				for Date, Value in zip(Dates, Values):
 					if Date < Start_date:
 						Anterior_value = Value
-					# When we pass Start_date
+					# Stop checking after Start_date
 					else:
 						break
 			Filtered = []
@@ -92,19 +110,22 @@ def Plot_graph(Graph_name, Period):
 			Dates, Values = zip(*Filtered)
 			if not Dates:
 				continue
-			# Find the earliest date among the connected markers
-			if Connected:
+			# Find the earliest date among the connected and event markers
+			if not Horizontal:
 				if Earliest_connected_marker is None or Dates[0] < Earliest_connected_marker:
 					Earliest_connected_marker = Dates[0]
 		Max_value = max(Values)
 		# Add 0.3% to the highest value, to prevent its point from being cut off in the graph
-		Scale = 0, Max_value + (Max_value * .0334)
+		if Event:
+			Scale = 0, Max_value/0.05
+		else:
+			Scale = 0, Max_value + (Max_value * 0.0334)
 		# For readability, there’s an offset between the labels and their points. This offset must
 		# be consistent from one marker to another. So the label offset of a marker is based on its
 		# scale (= its highest value).
-		Offset = Max_value * .016
+		Offset = Max_value * 0.016
 
-		Markers.append((Marker_name, Connected, Color, Scale, Offset, Dates, Values, Anterior_value))
+		Markers.append((Marker_name, Horizontal, Event, Color, Scale, Offset, Dates, Values, Anterior_value))
 		All_dates.extend(Dates)
 		All_colors.extend(Color)
 
@@ -116,7 +137,7 @@ def Plot_graph(Graph_name, Period):
 
 	# Second loop to draw the plots for each marker
 	Fig, Main_axis = plt.subplots(figsize=(10, 6))
-	for Marker_name, Connected, Color, Scale, Offset, Dates, Values, Anterior_value in Markers:
+	for Marker_name, Horizontal, Event, Color, Scale, Offset, Dates, Values, Anterior_value in Markers:
 		# Get or create axis for this scale
 		if Scale not in Scale_to_axis:
 			if not Scale_to_axis:
@@ -133,13 +154,10 @@ def Plot_graph(Graph_name, Period):
 			while Color in All_colors:
 				Color = next(Color_cycle)
 
-		# Draw the plot for this marker
-		if Connected:
-			Line, = Axis.plot(Dates, Values, marker="o", linestyle="-", label=Marker_name, color=Color)
 		# This is a horizontal marker, drawn with segments
-		else:
+		if Horizontal:
 			# If a horizontal marker have a last value before the beginning of the range of dates,
-			# add it at a new value for the date Earliest_connected_marker
+			# add it as a new value for the date Earliest_connected_marker
 			if Period and Anterior_value:
 				Dates = [Earliest_connected_marker] + list(Dates)
 				Values = [Anterior_value] + list(Values)
@@ -155,6 +173,15 @@ def Plot_graph(Graph_name, Period):
 			Axis.plot(Dates, Values, "o", color=Color)
 			# Dummy plot for the legend
 			Line, = Axis.plot([], [], marker="o", linestyle="-", label=Marker_name, color=Color)
+		else:
+			if Event:
+				Marker_shape="v"
+				Line_style=""
+			# This is a connected marker
+			else:
+				Marker_shape="o"
+				Line_style="-"
+			Line, = Axis.plot(Dates, Values, marker=Marker_shape, linestyle=Line_style, label=Marker_name, color=Color)
 		Legend_handles.append(Line)
 		Legend_labels.append(Marker_name)
 
@@ -164,20 +191,22 @@ def Plot_graph(Graph_name, Period):
 
 		# Add value labels next to each point, with same color as the plot
 		for Counter, (Date, Value) in enumerate(zip(Dates, Values)):
-			if Value > 0:
-				if Connected:
-					if Counter < len(Values) - 1 and Values[Counter + 1] < Value:
-						# Downward slope ahead = label above
-						Vertical_alignment = "bottom"
-						Label_offset = Offset
-					else:
-						# Upward or stable = label below
-						Vertical_alignment = "top"
-						Label_offset = -Offset
-				else:
-					# Horizontal marker = label below
+			# No label for event markers and for zero values
+			if not Event and Value > 0:
+				# Horizontal marker = label below
+				if Horizontal:
 					Vertical_alignment = "top"
 					Label_offset = -Offset
+				# Connected marker
+				else:
+					# Downward slope ahead = label above
+					if Counter < len(Values) - 1 and Values[Counter + 1] < Value:
+						Vertical_alignment = "bottom"
+						Label_offset = Offset
+					# Upward or stable slope ahead = label below
+					else:
+						Vertical_alignment = "top"
+						Label_offset = -Offset
 				Axis.text(Date, Value + Label_offset, str(Value), ha="center", va=Vertical_alignment, fontsize=9, color=Color)
 
 	# Hide Y-axes on both sides
@@ -202,7 +231,7 @@ def Plot_graph(Graph_name, Period):
 	Previous_year = None
 	Start_date = All_dates[0]
 	End_date = All_dates[-1]
-	# We asked for a range of dates less than one year = display the monday of each week
+	# If a range of dates is selected, and it’s less than one year = display the monday of each week
 	if Period and (End_date - Start_date).days <= 365:
 		Fist_monday = Start_date - datetime.timedelta(days=Start_date.weekday())
 		Last_monday = End_date - datetime.timedelta(days=End_date.weekday())
@@ -215,7 +244,7 @@ def Plot_graph(Graph_name, Period):
 			else:
 				Labels.append(Current.strftime("%m-%d"))
 			Current += datetime.timedelta(days=7)
-	# No range selected, or it’s greater than one year = display the date of the measures
+	# No range selected, or the range is greater than one year = display the date of the measures
 	else:
 		for Date in All_dates:
 			Tick_dates.append(Date)

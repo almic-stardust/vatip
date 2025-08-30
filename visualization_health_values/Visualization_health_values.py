@@ -7,7 +7,6 @@ import datetime
 import matplotlib.pyplot as plt
 import itertools
 import matplotlib
-from collections import defaultdict
 
 
 def Load_file(Filename):
@@ -194,29 +193,37 @@ def Plot_graph(Graph_name, Period):
 		if Axis is not Main_axis:
 			Axis.xaxis.set_visible(False)
 
-	# Remove padding by setting exact X-axis range
+	# Setting the exact X-axis range to remove padding
 	Main_axis.set_xlim(min(All_dates), max(All_dates))
 
-	# Build X-axis labels with conditional year display
+	# Build X-axis labels depending on period length
 	Labels = []
 	Tick_dates = []
 	Previous_year = None
-	# Group dates by ISO week
-	Weeks = defaultdict(list)
-	for Date in All_dates:
-		Year_week = Date.isocalendar()[:2]  # (year, week number)
-		Weeks[Year_week].append(Date)
-	# Display the Monday of each week 
-	for Year_week, _ in sorted(Weeks.items()):
-		Year, Week = Year_week
-		Monday = datetime.datetime.strptime(f"{Year}-W{Week}-1", "%Y-W%W-%w")
-		Tick_dates.append(Monday)
-		#Labels.append(Monday.strftime("%Y-%m-%d"))
-		if Date.year != Previous_year:
-			Labels.append(Monday.strftime("%Y-%m-%d"))
-			Previous_year = Date.year
-		else:
-			Labels.append(Monday.strftime("%m-%d"))
+	Start_date = All_dates[0]
+	End_date = All_dates[-1]
+	# We asked for a range of dates less than one year = display the monday of each week
+	if Period and (End_date - Start_date).days <= 365:
+		Fist_monday = Start_date - datetime.timedelta(days=Start_date.weekday())
+		Last_monday = End_date - datetime.timedelta(days=End_date.weekday())
+		Current = Fist_monday
+		while Current <= Last_monday:
+			Tick_dates.append(Current)
+			if Current.year != Previous_year:
+				Labels.append(Current.strftime("%Y-%m-%d"))
+				Previous_year = Current.year
+			else:
+				Labels.append(Current.strftime("%m-%d"))
+			Current += datetime.timedelta(days=7)
+	# No range selected, or it’s greater than one year = display the date of the measures
+	else:
+		for Date in All_dates:
+			Tick_dates.append(Date)
+			if Date.year != Previous_year:
+				Labels.append(Date.strftime("%Y-%m-%d"))
+				Previous_year = Date.year
+			else:
+				Labels.append(Date.strftime("%m-%d"))
 	# Apply custom x-tick labels, rotated vertically
 	Main_axis.set_xticks(Tick_dates)
 	Main_axis.set_xticklabels(Labels, rotation=90)

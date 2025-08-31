@@ -33,7 +33,7 @@ def Load_file(Filename, Event):
 						Values.append(Value)
 				# Ignore bad lines
 				except ValueError:
-					print(f"Error Value")
+					print(f"Error: Incorrect value in file {Filename}.")
 					continue
 			# For a event marker, the list Values corresponds to the number of times the event
 			# occurred during a day (= the number of times that date appears in the file)
@@ -64,13 +64,16 @@ def Plot_graph(Graph_name, Period):
 	"""Create the graph, with a hidden Y-axis for each marker’s scale"""
 	with open("Config.yaml", "r") as File:
 		Config = yaml.safe_load(File)
+	Markers = Config["Markers"]
 	Graphs = Config["Graphs"]
 	if Graph_name not in Graphs:
 		print(f"Unknown graph '{Graph_name}'.\n Available graphs: {', '.join(Graphs.keys())}")
 		sys.exit(1)
-	Markers = []
-	Anterior_value = None
+	List_markers = Graphs[Graph_name]["markers"][0]
+	Targets = Graphs[Graph_name]["targets"][0]
+	Graph_markers = []
 	Earliest_connected_marker = None
+	Anterior_value = None
 	All_dates = []
 	All_colors = []
 	Color_cycle = itertools.cycle(matplotlib.rcParams["axes.prop_cycle"].by_key()["color"])
@@ -78,17 +81,20 @@ def Plot_graph(Graph_name, Period):
 	Legend_handles = []
 	Legend_labels = []
 
-	# First loop to load the markers:
+	# First loop to load this graph’s markers:
 	# 1) When a range of dates is selected, for horizontal markers we need the last value before the
-	#    beginning of the range, and the earliest date among connected markers
+	#	 beginning of the range, and the earliest date among connected markers
 	# 2) We need all the colors before starting drawing, so as not to use the same twice
-	for Marker_name, Marker_dict in Graphs[Graph_name].items():
-		Horizontal = Marker_dict.get("horizontal", False)
-		Event = Marker_dict.get("event", False)
-		Color = Marker_dict.get("color", "")
-		Dates, Values = Load_file(Marker_dict["file"], Event)
+	for Marker_name in List_markers:
+		if not Markers.get(Marker_name):
+			print(f"Error: The marker {Marker_name} has no section in the config file.")
+			sys.exit(1)
+		Color = Markers[Marker_name].get("color", "")
+		Horizontal = Markers[Marker_name].get("horizontal", False)
+		Event = Markers[Marker_name].get("event", False)
+		Dates, Values = Load_file(Markers[Marker_name]["file"], Event)
 		if not Dates:
-			print(f"Error: No data to plot for file {Marker_dict['file']}.")
+			print(f"Error: No data to plot for file {Markers[Marker_name]['file']}.")
 			sys.exit(1)
 		# If a range of dates is selected
 		if Period:
@@ -125,19 +131,19 @@ def Plot_graph(Graph_name, Period):
 		# scale (= its highest value).
 		Offset = Max_value * 0.016
 
-		Markers.append((Marker_name, Horizontal, Event, Color, Scale, Offset, Dates, Values, Anterior_value))
-		All_dates.extend(Dates)
+		Graph_markers.append((Marker_name, Color, Horizontal, Event, Scale, Offset, Dates, Values, Anterior_value))
 		All_colors.extend(Color)
+		All_dates.extend(Dates)
 
 	if not All_dates:
 		print("Error: No data in the selected period")
 		sys.exit(1)
 	# Remove duplicates and sort
 	All_dates = sorted(set(All_dates))
+	Fig, Main_axis = plt.subplots(figsize=(10, 6))
 
 	# Second loop to draw the plots for each marker
-	Fig, Main_axis = plt.subplots(figsize=(10, 6))
-	for Marker_name, Horizontal, Event, Color, Scale, Offset, Dates, Values, Anterior_value in Markers:
+	for Marker_name, Color, Horizontal, Event, Scale, Offset, Dates, Values, Anterior_value in Graph_markers:
 		# Get or create axis for this scale
 		if Scale not in Scale_to_axis:
 			if not Scale_to_axis:

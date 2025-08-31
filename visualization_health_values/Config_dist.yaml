@@ -1,11 +1,36 @@
+Markers:
+  Poids:
+    file: "/path/to/file/Poids"
+  Vomissements:
+    file: "/path/to/file/Vomissements"
+    color: "black"
+    event: True
+  T4:
+    file: "/path/to/file/T4"
+    color: "purple"
+    normal_range: "15-50"
+    target: 30
+  Apelka:
+    file: "/path/to/file/Apelka"
+    color: "fuchsia"
+    horizontal: True
+  Créatinine:
+    file: "/path/to/file/Créatinine"
+    color: "darkorange"
+    normal_range: "8-21"
+  Urée:
+    file: "/path/to/file/Urée"
+    color: "gold"
+    normal_range: "-"
+
 Graphs:
   HyperT4:
-    T4:
-      file: "/path/to/file/T4"
-      color: "purple"
-    Thiamazole:
-      file: "/path/to/file/Thiamazole"
-      horizontal: true
-      color: "fuchsia"
-    Poids:
-      file: "/path/to/file/Poids"
+    markers:
+      - ["T4", "Apelka", "Poids", "Vomissements"]
+    ranges:
+      - ["T4"]
+  Reins:
+    markers:
+      - ["T4", "Créatinine", "Urée", "Hématocrite", "Vomissements", "Phosphore", "Calcium"]
+    ranges:
+      - ["Créatinine", "Urée", "Hématocrite", "Phosphore"]

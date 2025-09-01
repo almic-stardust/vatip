@@ -70,7 +70,7 @@ def Plot_graph(Graph_name, Period):
 		print(f"Unknown graph '{Graph_name}'.\n Available graphs: {', '.join(Graphs.keys())}")
 		sys.exit(1)
 	List_markers = Graphs[Graph_name]["markers"][0]
-	Targets = Graphs[Graph_name]["targets"][0]
+	Ranges = Graphs[Graph_name]["ranges"][0]
 	Graph_markers = []
 	Earliest_connected_marker = None
 	Anterior_value = None
@@ -92,6 +92,17 @@ def Plot_graph(Graph_name, Period):
 		Color = Markers[Marker_name].get("color", "")
 		Horizontal = Markers[Marker_name].get("horizontal", False)
 		Event = Markers[Marker_name].get("event", False)
+		# Parse the string "min-max"
+		Parts = Markers[Marker_name].get("normal_range", "").split("-")
+		if Parts:
+			try:
+				Normal_range = float(Parts[0]), float(Parts[1])
+			except Exception:
+				Normal_range = False
+		Target = Markers[Marker_name].get("target", False)
+		if Target and Normal_range:
+			# Example with T4: min 15 + max 50 + target ~30 → 15+(50-15)/2 = 32
+			Target = Normal_range[0] + (Normal_range[1] - Normal_range[0]) / 2
 		Dates, Values = Load_file(Markers[Marker_name]["file"], Event)
 		if not Dates:
 			print(f"Error: No data to plot for file {Markers[Marker_name]['file']}.")
@@ -116,8 +127,8 @@ def Plot_graph(Graph_name, Period):
 			Dates, Values = zip(*Filtered)
 			if not Dates:
 				continue
-			# Find the earliest date among the connected and event markers
-			if not Horizontal:
+			# Find the earliest date among the connected markers
+			if not Horizontal and not Event:
 				if Earliest_connected_marker is None or Dates[0] < Earliest_connected_marker:
 					Earliest_connected_marker = Dates[0]
 		Max_value = max(Values)
@@ -131,7 +142,7 @@ def Plot_graph(Graph_name, Period):
 		# scale (= its highest value).
 		Offset = Max_value * 0.016
 
-		Graph_markers.append((Marker_name, Color, Horizontal, Event, Scale, Offset, Dates, Values, Anterior_value))
+		Graph_markers.append((Marker_name, Color, Horizontal, Event, Normal_range, Target, Scale, Offset, Dates, Values, Anterior_value))
 		All_colors.extend(Color)
 		All_dates.extend(Dates)
 
@@ -143,7 +154,14 @@ def Plot_graph(Graph_name, Period):
 	Fig, Main_axis = plt.subplots(figsize=(10, 6))
 
 	# Second loop to draw the plots for each marker
-	for Marker_name, Color, Horizontal, Event, Scale, Offset, Dates, Values, Anterior_value in Graph_markers:
+	for Marker_name, \
+			Color, \
+			Horizontal, Event, \
+			Normal_range, Target, \
+			Scale, Offset, \
+			Dates, Values, \
+			Anterior_value \
+	in Graph_markers:
 		# Get or create axis for this scale
 		if Scale not in Scale_to_axis:
 			if not Scale_to_axis:
@@ -214,6 +232,14 @@ def Plot_graph(Graph_name, Period):
 						Vertical_alignment = "top"
 						Label_offset = -Offset
 				Axis.text(Date, Value + Label_offset, str(Value), ha="center", va=Vertical_alignment, fontsize=9, color=Color)
+		# If this marker is part of the ranges list for this graph, draw normal range and target
+		# value
+		if Marker_name in Ranges:
+			if Normal_range:
+				Axis.axhline(y=Normal_range[0], color=Color, linewidth=1, linestyle="-", alpha=0.5)
+				Axis.axhline(y=Normal_range[1], color=Color, linewidth=1, linestyle="-", alpha=0.5)
+			if Target:
+				Axis.axhline(y=Target, color=Color, linewidth=1, linestyle=":")
 
 	# Hide Y-axes on both sides
 	for Axis in Scale_to_axis.values():

@@ -9,19 +9,19 @@ Markers:
     file: "/path/to/file/T4"
     color: "purple"
     normal_range: "15-50"
-    target: 30
+    target: True
   Apelka:
     file: "/path/to/file/Apelka"
     color: "fuchsia"
     horizontal: True
-  Créatinine:
-    file: "/path/to/file/Créatinine"
-    color: "darkorange"
-    normal_range: "8-21"
-  Urée:
-    file: "/path/to/file/Urée"
-    color: "gold"
-    normal_range: "-"
+  PAL:
+    file: "/path/to/file/PAL"
+    color: "dodgerblue"
+    normal_range: "14-90"
+  ALAT:
+    file: "/path/to/file/ALAT"
+    color: "red"
+    normal_range: "20-100"
 
 Graphs:
   HyperT4:
@@ -29,8 +29,8 @@ Graphs:
       - ["T4", "Apelka", "Poids", "Vomissements"]
     ranges:
       - ["T4"]
-  Reins:
+  Foie:
     markers:
-      - ["T4", "Créatinine", "Urée", "Hématocrite", "Vomissements", "Phosphore", "Calcium"]
+      - ["T4", "PAL", "ALAT", "Vomissements"]
     ranges:
-      - ["Créatinine", "Urée", "Hématocrite", "Phosphore"]
+      - ["PAL", "ALAT"]

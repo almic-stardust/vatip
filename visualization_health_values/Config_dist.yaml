@@ -9,7 +9,7 @@ Markers:
     file: "/path/to/file/T4"
     color: "purple"
     normal_range: "15-50"
-    target: True
+    target: "middle"
   Apelka:
     file: "/path/to/file/Apelka"
     color: "fuchsia"
@@ -17,11 +17,13 @@ Markers:
   PAL:
     file: "/path/to/file/PAL"
     color: "dodgerblue"
-    normal_range: "14-90"
+    normal_range: "15-90"
+    target: "below_max"
   ALAT:
     file: "/path/to/file/ALAT"
     color: "red"
     normal_range: "20-100"
+    target: "below_max"
 
 Graphs:
   HyperT4:

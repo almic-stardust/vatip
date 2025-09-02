@@ -92,17 +92,16 @@ def Plot_graph(Graph_name, Period):
 		Color = Markers[Marker_name].get("color", "")
 		Horizontal = Markers[Marker_name].get("horizontal", False)
 		Event = Markers[Marker_name].get("event", False)
-		# Parse the string "min-max"
-		Parts = Markers[Marker_name].get("normal_range", "").split("-")
-		if Parts:
-			try:
-				Normal_range = float(Parts[0]), float(Parts[1])
-			except Exception:
-				Normal_range = False
+		Normal_range = Markers[Marker_name].get("normal_range", False)
+		if Normal_range:
+			# Parse the string "min-max"
+			Parts = Markers[Marker_name].get("normal_range", "").split("-")
+			if Parts:
+				try:
+					Normal_range = float(Parts[0]), float(Parts[1])
+				except Exception:
+					Normal_range = False
 		Target = Markers[Marker_name].get("target", False)
-		if Target and Normal_range:
-			# Example with T4: min 15 + max 50 + target ~30 → 15+(50-15)/2 = 32
-			Target = Normal_range[0] + (Normal_range[1] - Normal_range[0]) / 2
 		Dates, Values = Load_file(Markers[Marker_name]["file"], Event)
 		if not Dates:
 			print(f"Error: No data to plot for file {Markers[Marker_name]['file']}.")
@@ -232,14 +231,19 @@ def Plot_graph(Graph_name, Period):
 						Vertical_alignment = "top"
 						Label_offset = -Offset
 				Axis.text(Date, Value + Label_offset, str(Value), ha="center", va=Vertical_alignment, fontsize=9, color=Color)
+
 		# If this marker is part of the ranges list for this graph, draw normal range and target
 		# value
 		if Marker_name in Ranges:
-			if Normal_range:
+			print(Target)
+			if Target == "middle" or Target == "above_min":
 				Axis.axhline(y=Normal_range[0], color=Color, linewidth=1, linestyle="-", alpha=0.5)
+			if Target == "middle" or Target == "below_max":
 				Axis.axhline(y=Normal_range[1], color=Color, linewidth=1, linestyle="-", alpha=0.5)
-			if Target:
-				Axis.axhline(y=Target, color=Color, linewidth=1, linestyle=":")
+			if Target == "middle":
+				# Example with T4: min 15 + max 50 + target ~30 → 15+(50-15)/2 = 32
+				Middle = Normal_range[0] + (Normal_range[1] - Normal_range[0]) / 2
+				Axis.axhline(y=Middle, color=Color, linewidth=1, linestyle=":")
 
 	# Hide Y-axes on both sides
 	for Axis in Scale_to_axis.values():

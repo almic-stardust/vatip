@@ -10,7 +10,7 @@ import matplotlib
 from collections import Counter
 
 
-def Load_file(Filename, Event):
+def Load_marker(Filename, Event):
 	"""Load date and value pairs from file."""
 	Dates = []
 	Values = []
@@ -26,7 +26,7 @@ def Load_file(Filename, Event):
 					# First part is the date in DD/MM/YYYY
 					Date = datetime.datetime.strptime(Parts[0], "%d/%m/%Y")
 					Dates.append(Date)
-					# The file is a list of pairs date+value
+					# When the file is a list of pairs date+value
 					if not Event:
 						# Second part is the numeric value
 						Value = float(Parts[1])
@@ -60,26 +60,102 @@ def Load_file(Filename, Event):
 	return Dates, Values
 
 
-def Plot_graph(Graph_name, Period):
-	"""Create the graph, with a hidden Y-axis for each marker’s scale"""
-	with open("Config.yaml", "r") as File:
-		Config = yaml.safe_load(File)
-	Markers = Config["Markers"]
-	Graphs = Config["Graphs"]
-	if Graph_name not in Graphs:
-		print(f"Unknown graph '{Graph_name}'.\n Available graphs: {', '.join(Graphs.keys())}")
+def Load_modifs(Filename, Type_modifs):
+	"""Load modifications list from file."""
+	Dates = []
+	Problems = []
+	Labels = []
+	try:
+		with open(Filename, "r", encoding="utf-8") as File:
+			for Line in File:
+				Line = Line.strip()
+				# Skip empty or commented lines
+				if not Line or Line.startswith("#"):
+					continue
+				Parts = Line.split()
+				try:
+					# First part is the date in DD/MM/YYYY
+					Date = datetime.datetime.strptime(Parts[0], "%d/%m/%Y")
+					# Second part is the type of problem
+					Problem = Parts[1]
+					# All words after (and including) the third are the label
+					Label = " ".join(Parts[2:])
+				# Ignore bad lines
+				except ValueError:
+					print(f"Error: Incorrect value in file {Filename}.")
+					continue
+				Dates.append(Date)
+				Problems.append(Problem)
+				Labels.append(Label)
+				# If instead we want only the dates for the type of problem of the current graph
+				#if Problem == Type_modifs or Type_modifs == "all":
+				#	Dates.append(Date)
+				#	Problems.append(Problem)
+				#	Labels.append(Label)
+	except FileNotFoundError:
+		print(f"Error: File {Filename} not found.")
 		sys.exit(1)
-	List_markers = Graphs[Graph_name]["markers"][0]
-	Ranges = Graphs[Graph_name]["ranges"][0]
+	return Dates, Problems, Labels
+
+
+def Plot_graph(Graph_name, Period):
+	"""Create the graph, with a hidden Y axis for each marker’s scale"""
 	Graph_markers = []
 	Earliest_connected_marker = None
 	Anterior_value = None
-	All_dates = []
 	All_colors = []
 	Color_cycle = itertools.cycle(matplotlib.rcParams["axes.prop_cycle"].by_key()["color"])
+	All_dates = []
 	Scale_to_axis = {}
 	Legend_handles = []
 	Legend_labels = []
+
+	# Load and verify the configuration file
+	with open("Config.yaml", "r") as File:
+		Config = yaml.safe_load(File)
+	Graphs = Config.get("Graphs", None)
+	if not Graphs:
+		print(f"Error: The configuration file doesn’t have a list of graphs.")
+		print(f"Please complete the configuration file.")
+		sys.exit(1)
+	if Graph_name not in Graphs:
+		print(f"Error: Unknown graph “{Graph_name}”.\nAvailable graphs: {', '.join(Graphs.keys())}")
+		sys.exit(1)
+	Markers = Config.get("Markers", None)
+	if not Markers:
+		print(f"Error: The configuration file doesn’t have a list of markers.")
+		print(f"Please complete the configuration file.")
+		sys.exit(1)
+	List_modifs = Config.get("Modifications", None)
+	if not List_modifs:
+		print(f"Warning: The configuration file doesn’t have a list of medical treatment modifications.")
+	List_markers = Graphs[Graph_name].get("markers", None)
+	if not List_markers:
+		print(f"Error: “{Graph_name}” doesn’t have a list of markers.")
+		print(f"Please complete the configuration file.")
+		sys.exit(1)
+	List_markers = List_markers[0]
+	Ranges = Graphs[Graph_name].get("ranges", None)
+	if not Ranges:
+		print(f"Warning: “{Graph_name}” doesn’t have a list of ranges.")
+	Ranges = Ranges[0]
+
+	if List_modifs:
+		Modifs = None
+		File = List_modifs.get("file", None)
+		if not File:
+			print(f"Error: The “Modifications” section doesn’t indicate the file to load.")
+			print(f"Please complete the configuration file.")
+			sys.exit(1)
+		Type_modifs = Graphs[Graph_name].get("modifications", None)
+		if Type_modifs:
+			Modifs = Load_modifs(File, Type_modifs)
+			Colors_modifs = List_modifs.get("colors", None)
+			if not Colors_modifs:
+				print(f"Warning: The “Modifications” section doesn’t include a complete list of colors for each problem.")
+				print(f"The problems without an associated color will be displayed in red.")
+		elif Type_modifs != "none":
+			print(f"Warning: “{Graph_name}” doesn’t have a list of medical treatment modifications.")
 
 	# First loop to load this graph’s markers:
 	# 1) When a range of dates is selected, for horizontal markers we need the last value before the
@@ -102,7 +178,7 @@ def Plot_graph(Graph_name, Period):
 				except Exception:
 					Normal_range = False
 		Target = Markers[Marker_name].get("target", False)
-		Dates, Values = Load_file(Markers[Marker_name]["file"], Event)
+		Dates, Values = Load_marker(Markers[Marker_name]["file"], Event)
 		if not Dates:
 			print(f"Error: No data to plot for file {Markers[Marker_name]['file']}.")
 			sys.exit(1)
@@ -142,7 +218,7 @@ def Plot_graph(Graph_name, Period):
 		Offset = Max_value * 0.016
 
 		Graph_markers.append((Marker_name, Color, Horizontal, Event, Normal_range, Target, Scale, Offset, Dates, Values, Anterior_value))
-		All_colors.extend(Color)
+		All_colors.append(Color)
 		All_dates.extend(Dates)
 
 	if not All_dates:
@@ -150,6 +226,8 @@ def Plot_graph(Graph_name, Period):
 		sys.exit(1)
 	# Remove duplicates and sort
 	All_dates = sorted(set(All_dates))
+	Start_date = All_dates[0]
+	End_date = All_dates[-1]
 	Fig, Main_axis = plt.subplots(figsize=(10, 6))
 
 	# Second loop to draw the plots for each marker
@@ -216,6 +294,9 @@ def Plot_graph(Graph_name, Period):
 		for Counter, (Date, Value) in enumerate(zip(Dates, Values)):
 			# No label for event markers and for zero values
 			if not Event and Value > 0:
+				# If the config file specifies a label color different from the line for this
+				# marker, or we use the color of the line
+				Label_color = Markers[Marker_name].get("label_color", Color)
 				# Horizontal marker = label below
 				if Horizontal:
 					Vertical_alignment = "top"
@@ -230,22 +311,52 @@ def Plot_graph(Graph_name, Period):
 					else:
 						Vertical_alignment = "top"
 						Label_offset = -Offset
-				Axis.text(Date, Value + Label_offset, str(Value), ha="center", va=Vertical_alignment, fontsize=9, color=Color)
+				Axis.text(Date, Value + Label_offset, str(Value), ha="center", va=Vertical_alignment, fontsize=8, color=Label_color)
 
-		# If this marker is part of the ranges list for this graph, draw normal range and target
-		# value
+		# If this marker is part of the ranges list for this graph, display the target values with
+		# horizontal lines
 		if Marker_name in Ranges:
-			print(Target)
-			if Target == "middle" or Target == "above_min":
+			if Target == "above_min" or Target == "middle":
 				Axis.axhline(y=Normal_range[0], color=Color, linewidth=1, linestyle="-", alpha=0.5)
-			if Target == "middle" or Target == "below_max":
+			if Target == "below_max" or Target == "middle":
 				Axis.axhline(y=Normal_range[1], color=Color, linewidth=1, linestyle="-", alpha=0.5)
 			if Target == "middle":
 				# Example with T4: min 15 + max 50 + target ~30 → 15+(50-15)/2 = 32
 				Middle = Normal_range[0] + (Normal_range[1] - Normal_range[0]) / 2
 				Axis.axhline(y=Middle, color=Color, linewidth=1, linestyle=":")
 
-	# Hide Y-axes on both sides
+	# Display each medical treatment modification with a vertical line associated to a label
+	if Modifs:
+		Dates, Problems, Labels = Modifs
+		# If a range of dates is selected, exclude modifications that occurred outside of it
+		if Period:
+			Start_date, End_date = Period
+			# clamp End_date to the last available data point on the X axis
+			End_date = min(End_date, All_dates[-1])
+		else:
+			Start_date, End_date = All_dates[0], All_dates[-1]
+		for Date, Problem, Label in zip(Dates, Problems, Labels):
+			# The problems without an associated color will be displayed in red
+			Color = Colors_modifs.get(Problem, "red")
+			if not (Start_date <= Date <= End_date):
+				continue
+			# If the label is longer than 18 characters, cut it in two lines
+			if len(Label) > 18:
+				# Find the last space before or at position 18
+				Position = Label.rfind(" ", 0, 18)
+				# No space found, hard cut
+				if Position == -1:
+					Position = 18
+				Label = Label[:Position].rstrip() + "\n" + Label[Position:].lstrip()
+			# Vertical line
+			Axis.axvline(x=Date, color=Color, linestyle="--", linewidth=1, alpha=0.9, zorder=0)
+			# Vertical label, anchored to the X axis coordinates (independent of Y scale)
+			Axis.text(Date, 1.02, Label,
+					rotation=90, va="bottom", ha="center", multialignment="left", color=Color,
+					transform=Main_axis.get_xaxis_transform(),
+					fontsize=8, clip_on=False)
+
+	# Hide Y axes on both sides
 	for Axis in Scale_to_axis.values():
 		Axis.yaxis.set_visible(False)
 		if "left" in Axis.spines:
@@ -258,15 +369,13 @@ def Plot_graph(Graph_name, Period):
 		if Axis is not Main_axis:
 			Axis.xaxis.set_visible(False)
 
-	# Setting the exact X-axis range to remove padding
+	# Setting the exact X axis range to remove padding
 	Main_axis.set_xlim(min(All_dates), max(All_dates))
 
-	# Build X-axis labels depending on period length
+	# Build X axis labels depending on period length
 	Labels = []
 	Tick_dates = []
 	Previous_year = None
-	Start_date = All_dates[0]
-	End_date = All_dates[-1]
 	# If a range of dates is selected, and it’s less than one year = display the monday of each week
 	if Period and (End_date - Start_date).days <= 365:
 		Fist_monday = Start_date - datetime.timedelta(days=Start_date.weekday())
@@ -289,7 +398,7 @@ def Plot_graph(Graph_name, Period):
 				Previous_year = Date.year
 			else:
 				Labels.append(Date.strftime("%m-%d"))
-	# Apply custom x-tick labels, rotated vertically
+	# Apply custom X-tick labels, rotated vertically
 	Main_axis.set_xticks(Tick_dates)
 	Main_axis.set_xticklabels(Labels, rotation=90)
 

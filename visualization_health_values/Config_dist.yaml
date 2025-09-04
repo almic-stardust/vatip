@@ -1,5 +1,6 @@
 Markers:
   Poids:
+    color: "#289228"
     file: "/path/to/file/Poids"
   Vomissements:
     file: "/path/to/file/Vomissements"
@@ -12,27 +13,41 @@ Markers:
     target: "middle"
   Apelka:
     file: "/path/to/file/Apelka"
-    color: "fuchsia"
+    color: "#7e66fe"
     horizontal: True
+  Hématocrite:
+    file: "/path/to/file/Hématocrite"
+    color: "red"
+    normal_range: "33.7-45"
+    target: "above_min"
   PAL:
     file: "/path/to/file/PAL"
-    color: "dodgerblue"
+    color: "red"
     normal_range: "15-90"
     target: "below_max"
   ALAT:
     file: "/path/to/file/ALAT"
-    color: "red"
+    color: "#124cff"
     normal_range: "20-100"
     target: "below_max"
+
+Modifications:
+  file: "/path/to/file/Modifications"
+  colors:
+    "T4": "purple"
+    "foie": "#124cff"
+    "reins": "#ff6600"
 
 Graphs:
   HyperT4:
     markers:
-      - ["T4", "Apelka", "Poids", "Vomissements"]
+      - ["T4", "Apelka", "Hématocrite", "Poids", "Vomissements"]
     ranges:
-      - ["T4"]
+      - ["T4", "Hématocrite"]
+    modifications: "all"
   Foie:
     markers:
       - ["T4", "PAL", "ALAT", "Vomissements"]
     ranges:
       - ["PAL", "ALAT"]
+    modifications: "foie"
